@@ -27,12 +27,12 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     operation = req_body['operation']
     group = req_body['context']['resourceGroupName']
     resource = req_body['context']['resourceName']
-    bigiq_address = req_body['properties']['bigIqAddress']
-    bigiq_username = req_body['properties']['bigIqUsername'] 
-    key_vault_name = req_body['properties']['keyVaultName'] 
-    bigiq_license_pool = req_body['properties']['bigIqLicensePoolName'] 
-    bigiq_license_sku = req_body['properties']['bigIqLicenseSkuKeyword1'] 
-    bigiq_license_unit = req_body['properties']['bigIqLicenseUnitOfMeasure']
+    
+    bigiq_address = os.environ['BIGIQ_ADDRESS']
+    bigiq_username = os.environ['BIGIQ_USERNAME'] 
+    bigiq_license_pool = os.environ['BIGIQ_LICENSE_POOL']
+    bigiq_license_sku = os.environ['BIGIQ_LICENSE_SKU']
+    bigiq_license_unit = os.environ['BIGIQ_LICENSE_UNIT']
 
     logging.info('BIG-IQ password: ' + os.environ['BIGIQ_PASSWORD'])
 
@@ -51,7 +51,6 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         'bigiqLicensePool': bigiq_license_pool,
         'bigiqLicenseSku': bigiq_license_sku,
         'bigiqLicenseUnit': bigiq_license_unit,
-        'keyVault': key_vault_name,
         'bigiqPassword': os.environ['BIGIQ_PASSWORD']
     }
 
