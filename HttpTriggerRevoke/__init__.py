@@ -41,7 +41,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
 
     # get vmss instance ip addresses
-    # Create MSI Authentication
+    # Create MSI authentication - requires a system managed identity assigned to this function
     credentials = MSIAuthentication()
 
     # Create a Subscription Client
@@ -55,81 +55,82 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     networkClient = NetworkManagementClient(credentials, subscription_id)
 
     # Create a dictionary of instances
-    # We may not be able to get NIC information when scaling out
-    instances = []
+    provisioned = []
+    licensed = []
+
     vmss = computeClient.virtual_machine_scale_set_vms.list(group, resource)
-    for item in vmss:
-        instance_view = computeClient.virtual_machine_scale_set_vms.get_instance_view(group, resource, item.instance_id)
-        nic = resourceClient.resources.get_by_id(
-            item.network_profile.network_interfaces[0].id,
-            api_version='2017-12-01')
-        ip_reference = nic.properties['ipConfigurations'][0]['properties']
+    for instance in vmss:
+        instance_name = instance.name
+        instance_id = instance.instance_id
+        vmss_vm = computeClient.virtual_machine_scale_set_vms.get(group, resource, instance.instance_id)
+        vmss_vm_provisioning_state = vmss_vm.provisioning_state
 
-        instances.append({
-            'instanceName': item.name, 
-            'instanceId': item.instance_id, 
-            'powerState': instance_view.statuses[1].code.split("/")[1], 
-            'provisioningState': ip_reference['provisioningState'], 
-            'privateIp': ip_reference['privateIPAddress'], 
-            'macAddress': nic.properties['macAddress']})
+        try: 
+            nic = resourceClient.resources.get_by_id(
+                instance.network_profile.network_interfaces[0].id,
+                api_version='2017-12-01')
+            ip_reference = nic.properties['ipConfigurations'][0]['properties']
+            private_ip = ip_reference['privateIPAddress']
+            mac_address = nic.properties['macAddress']
+        except AttributeError:
+            provisioning_state = None
+            private_ip = None
+            mac_address = None
 
-    logging.info("Instances: " + str(instances))
+        provisioned.append({
+            'instance_name': instance_name, 
+            'instance_id': instance_id, 
+            'provisioning_state': vmss_vm_provisioning_state, 
+            'private_ip': private_ip, 
+            'mac_address': mac_address.replace("-", ":")})
+
+    logging.info("Instance dictionary: " + str(provisioned))
 
 
-    # # get license bigiq assignments
-    # # create management client
-    # mgmt_client = ManagementClient(
-    #     os.environ['BIGIQ_ADDRESS'],
-    #     user=os.environ['BIGIQ_USERNAME'],
-    #     password=os.environ['BIGIQ_PASSWORD'])
+    # get license assignments
+    mgmt_client = ManagementClient(
+        os.environ['BIGIQ_ADDRESS'],
+        user=os.environ['BIGIQ_USERNAME'],
+        password=os.environ['BIGIQ_PASSWORD'])
 
-    # # create assignment client, member management client
-    # assignment_client = AssignmentClient(mgmt_client)
-    # member_mgmt_client = MemberManagementClient(mgmt_client)
+    # create assignment client and member management client
+    assignment_client = AssignmentClient(mgmt_client)
+    member_mgmt_client = MemberManagementClient(mgmt_client)
 
-    # # list assignments
-    # assignments = assignment_client.list()
-
-    # # get address assignment - there should only be one
-    # assignments = assignments['items']
-    # assignment = assignments[0]
-
-    # if not assignment:
-    #     raise Exception('Unable to locate assignment from BIG-IQ assignments')
+    assignments = assignment_client.list()
+    assignments = assignments['items']
     
-    # logging.info('Assignment: ' + str(assignment))
-    # logging.info('Address: ' + assignment['deviceAddress'])
-    # logging.info('MAC: ' + assignment['macAddress'])
+    if not assignments:
+        raise Exception('Unable to locate any BIG-IQ assignments!')
 
-    # # perform revoke - unreachable device
-    # response = member_mgmt_client.create(
-    #     config={
-    #         'licensePoolName': bigiq_license_pool,
-    #         'command': 'revoke',
-    #         'address': assignment['deviceAddress'],
-    #         'assignmentType': 'UNREACHABLE',
-    #         'macAddress': assignment['macAddress']
-    #     }
-    # )
+    for assignment in assignments:  
+        licensed.append({          
+            'private_ip': assignment['deviceAddress'], 
+            'mac_address': assignment['macAddress']})
 
+    logging.info("Assignment dictionary: " + str(licensed))
 
-    # format response
-    response = {
-        'operation': operation,
-        'resourceGroup': group,
-        'resourceName': resource,
-        'bigiqAddress': bigiq_address,
-        'bigiqUsername': bigiq_username,
-        'bigiqLicensePool': bigiq_license_pool,
-        'bigiqLicenseSku': bigiq_license_sku,
-        'bigiqLicenseUnit': bigiq_license_unit,
-        'bigiqPassword': os.environ['BIGIQ_PASSWORD']
-    }
+    for licensed_thing in licensed[:]:
+        for provisioned_thing in provisioned:
+            if licensed_thing['mac_address'] == provisioned_thing['mac_address'] and \
+                provisioned_thing['provisioning_state'] == 'Succeeded' or \
+                    provisioned_thing['provisioning_state'] == 'Creating':
+                        licensed.remove(licensed_thing)
 
-    if response:
-        return func.HttpResponse(json.dumps(response))
-    else:
-        return func.HttpResponse(
-             "Please pass an operation on the query string or in the request body",
-             status_code=400
-        )
+    logging.info("Final dictionary: " + str(licensed))
+
+    if licensed:
+        for unlicensed_thing in licensed:
+            # let my Cameron go
+            member_mgmt_client.create(
+                config={
+                    'licensePoolName': 'reggie',
+                    'command': 'revoke',
+                    'address': unlicensed_thing['private_ip'],
+                    'assignmentType': 'UNREACHABLE',
+                    'macAddress': unlicensed_thing['mac_address'],
+                    'hypervisor': 'azure'
+                }
+            )
+
+    return 'Great!'
