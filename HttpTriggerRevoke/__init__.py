@@ -33,12 +33,6 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     operation = req_body['operation']
     group = req_body['context']['resourceGroupName']
     resource = req_body['context']['resourceName']
-    bigiq_address = os.environ['BIGIQ_ADDRESS']
-    bigiq_username = os.environ['BIGIQ_USERNAME'] 
-    bigiq_license_pool = os.environ['BIGIQ_LICENSE_POOL']
-    bigiq_license_sku = os.environ['BIGIQ_LICENSE_SKU']
-    bigiq_license_unit = os.environ['BIGIQ_LICENSE_UNIT']
-
 
     # get vmss instance ip addresses
     # Create MSI authentication - requires a system managed identity assigned to this function
@@ -124,7 +118,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             # let my Cameron go
             member_mgmt_client.create(
                 config={
-                    'licensePoolName': 'reggie',
+                    'licensePoolName': os.environ['BIGIQ_LICENSE_POOL'],
                     'command': 'revoke',
                     'address': unlicensed_thing['private_ip'],
                     'assignmentType': 'UNREACHABLE',
