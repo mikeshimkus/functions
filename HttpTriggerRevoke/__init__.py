@@ -31,8 +31,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
     # set variables
     operation = req_body['operation']
-    group = req_body['context']['resourceGroupName']
-    resource = req_body['context']['resourceName']
+    group = os.environ['AZURE_RESOURCE_GROUP']
+    resource = os.environ['AZURE_VMSS_NAME']
 
     # get vmss instance ip addresses
     # Create MSI authentication - requires a system managed identity assigned to this function
